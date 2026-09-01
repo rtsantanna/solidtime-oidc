@@ -11,6 +11,7 @@ use App\Http\Middleware\EnsureEmailIsVerified;
 use App\Http\Middleware\ForceHttps;
 use App\Http\Middleware\ForceJsonResponse;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\PreventOidcProfilePhotoChanges;
 use App\Http\Middleware\PreventRequestsDuringMaintenance;
 use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Middleware\ShareInertiaData;
@@ -70,6 +71,7 @@ class Kernel extends HttpKernel
             ShareErrorsFromSession::class,
             VerifyCsrfToken::class,
             SubstituteBindings::class,
+            PreventOidcProfilePhotoChanges::class,
             HandleInertiaRequests::class,
             ShareInertiaData::class,
             AddLinkHeadersForPreloadedAssets::class,

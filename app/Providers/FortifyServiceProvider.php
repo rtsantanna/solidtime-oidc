@@ -22,6 +22,10 @@ use Inertia\Inertia;
 use Laravel\Fortify\Contracts\LoginResponse as LoginResponseContract;
 use Laravel\Fortify\Contracts\TwoFactorLoginResponse;
 use Laravel\Fortify\Fortify;
+use App\Enums\RegistrationMode;
+use App\Extensions\Fortify\CustomLogoutResponse;
+use Illuminate\Validation\ValidationException;
+use Laravel\Fortify\Contracts\LogoutResponse;
 
 class FortifyServiceProvider extends ServiceProvider
 {
@@ -52,10 +56,24 @@ class FortifyServiceProvider extends ServiceProvider
             ]);
         });
 
-        Fortify::loginView(function () {
+        Fortify::loginView(function (Request $request) {
+            $oidcEnabled = (bool) config('services.oidc.enabled')
+                && filled(config('services.oidc.issuer'))
+                && filled(config('services.oidc.client_id'));
+
             return Inertia::render('Auth/Login', [
                 'canResetPassword' => Route::has('password.request'),
-                'status' => session('status'),
+                // Upstream usa o enum RegistrationMode; o fork fazia (bool) sobre a string,
+                // e (bool) 'off' e TRUE em PHP - mostraria o link de registro com registro desligado.
+                'canRegister' => RegistrationMode::fromConfig(config('app.enable_registration')) !== RegistrationMode::Off
+                    && Route::has('register'),
+                'passwordLoginEnabled' => (bool) config('auth.password_login_enabled', true),
+                'status' => $request->session()->get('status'),
+                'oidc' => [
+                    'enabled' => $oidcEnabled,
+                    'label' => (string) config('services.oidc.button_label'),
+                    'url' => $oidcEnabled ? route('oidc.redirect') : null,
+                ],
             ]);
         });
 
@@ -87,6 +105,12 @@ class FortifyServiceProvider extends ServiceProvider
         });
 
         Fortify::authenticateUsing(function (Request $request): ?User {
+            if (! (bool) config('auth.password_login_enabled', true)) {
+                throw ValidationException::withMessages([
+                    Fortify::username() => [__('Password login is disabled.')],
+                ]);
+            }
+
             /** @var User|null $user */
             $user = User::query()
                 ->where('email', $request->email)
@@ -111,6 +135,7 @@ class FortifyServiceProvider extends ServiceProvider
         });
 
         $this->app->instance(LoginResponseContract::class, new CustomLoginResponse);
+        $this->app->bind(LogoutResponse::class, CustomLogoutResponse::class);
         $this->app->instance(TwoFactorLoginResponse::class, new CustomTwoFactorLoginResponse);
     }
 }

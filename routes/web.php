@@ -31,6 +31,11 @@ Route::get('/shared-report', function () {
     return Inertia::render('SharedReport');
 })->name('shared-report');
 
+Route::middleware('guest')->group(function (): void {
+    Route::get('/auth/oidc/redirect', [OidcController::class, 'redirect'])->name('oidc.redirect');
+    Route::get('/auth/oidc/callback', [OidcController::class, 'callback'])->name('oidc.callback');
+});
+
 Route::middleware([
     'auth:web',
     'auth.session',

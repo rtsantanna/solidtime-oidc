@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import AuthenticationCard from '@/Components/AuthenticationCard.vue';
 import AuthenticationCardLogo from '@/Components/AuthenticationCardLogo.vue';
 import Banner from '@/Components/Banner.vue';
@@ -7,10 +8,17 @@ import { Field, FieldLabel, FieldError } from '@/packages/ui/src/field';
 import PrimaryButton from '@/packages/ui/src/Buttons/PrimaryButton.vue';
 import TextInput from '@/packages/ui/src/Input/TextInput.vue';
 
-defineProps({
-    canResetPassword: Boolean,
-    status: String,
-});
+const props = defineProps<{
+    canResetPassword?: boolean;
+    canRegister?: boolean;
+    passwordLoginEnabled?: boolean;
+    status?: string;
+    oidc?: {
+        enabled: boolean;
+        label: string;
+        url: string | null;
+    };
+}>();
 
 const form = useForm({
     email: '',
@@ -32,18 +40,27 @@ const page = usePage<{
         message: string;
     };
 }>();
+
+const unframedSsoOnly = computed(
+    () =>
+        !props.passwordLoginEnabled &&
+        props.oidc?.enabled === true &&
+        typeof props.oidc.url === 'string' &&
+        props.oidc.url !== ''
+);
 </script>
 
 <template>
     <Head title="Log in" />
 
-    <AuthenticationCard>
+    <AuthenticationCard :unframed="unframedSsoOnly">
         <template #logo>
             <AuthenticationCardLogo />
         </template>
 
         <template #actions>
             <Link
+                v-if="canRegister"
                 class="py-8 text-text-secondary text-sm font-medium opacity-90 hover:opacity-100 transition"
                 :href="route('register')">
                 No account yet? <span class="text-text-primary">Register here!</span>
@@ -61,7 +78,23 @@ const page = usePage<{
             {{ page.props.flash?.message }}
         </div>
 
-        <form @submit.prevent="submit">
+        <div v-if="oidc?.enabled && oidc.url" class="mb-6">
+            <a
+                :href="oidc.url"
+                class="flex w-full items-center justify-center rounded-md border border-border bg-card-background px-4 py-2.5 text-sm font-medium text-text-primary transition hover:border-text-secondary hover:bg-card-background-separator focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+                {{ oidc.label }}
+            </a>
+
+            <div
+                v-if="passwordLoginEnabled"
+                class="mt-6 flex items-center gap-3 text-xs uppercase tracking-wide text-text-secondary">
+                <div class="h-px flex-1 bg-card-background-separator"></div>
+                <span>or</span>
+                <div class="h-px flex-1 bg-card-background-separator"></div>
+            </div>
+        </div>
+
+        <form v-if="passwordLoginEnabled" @submit.prevent="submit">
             <Field>
                 <FieldLabel for="email">Email</FieldLabel>
                 <TextInput
