@@ -1,54 +1,141 @@
-# solidtime - The modern Open-Source TimeTracker
+# solidtime-oidc
 
-[![GitHub License](https://img.shields.io/github/license/solidtime-io/solidtime?style=flat-square)](https://github.com/solidtime-io/solidtime/blob/main/LICENSE.md)
-[![Codecov](https://img.shields.io/codecov/c/github/solidtime-io/solidtime?style=flat-square&logo=codecov)](https://codecov.io/gh/solidtime-io/solidtime)
-![GitHub Actions Unit Tests Status](https://img.shields.io/github/actions/workflow/status/solidtime-io/solidtime/phpunit.yml?style=flat-square)
-![PHPStan badge](https://img.shields.io/badge/PHPStan-Level_7-blue?style=flat-square&color=blue)
+Generic **OIDC single sign-on** for [solidtime](https://github.com/solidtime-io/solidtime),
+applied as a **minimal, rebasable patch** on top of the upstream `v0.20.0` release.
 
-![Screenshot of the solidtime application with header: solidtime - The modern Open-Source Time Tracker](docs/solidtime-banner.png "solidtime Banner")
+Works with any OpenID Connect provider. Validated against **Keycloak federating Microsoft
+Entra ID**. Not Google-only, and not a full fork of an old base.
 
-solidtime is a modern open-source time tracking application for Freelancers and Agencies.
+## Why this exists
 
-## Features
+Upstream solidtime has no SSO yet. The feature request
+([discussion #238](https://github.com/solidtime-io/solidtime/discussions/238)) has been open
+since October 2024, and PR
+[#1131 "Add core support for extendable authentication"](https://github.com/solidtime-io/solidtime/pull/1131)
+is still open. The maintainer has indicated SSO may land on-premise first and could become a
+paid feature.
 
- - Time tracking: Track your time with a modern and easy-to-use interface
- - Projects: Create and manage projects and assign project members
- - Tasks: Create and manage tasks and assign tasks to projects
- - Clients: Create and manage clients and assign clients to projects
- - Billable rates: Set billable rates for projects, project members, organization members and organizations 
- - Multiple organizations: Create and manage multiple organizations with one account
- - Roles and permissions: Create and manage organizations
- - Import: Import your time tracking data from other time tracking applications (Supported: Toggl, Clockify, Timeentry CSV)
+This repository exists so self-hosters can have OIDC **today**, with a patch small enough to
+rebase onto each new upstream release — and to throw away entirely once upstream ships it.
 
-## Self Hosting
+## Credits
 
-If you are looking into self-hosting solidtime, you can find the guides [here](https://docs.solidtime.io/self-hosting/intro)
+- **Upstream:** [solidtime-io/solidtime](https://github.com/solidtime-io/solidtime) — AGPL-3.0.
+  All the actual product is theirs.
+- **OIDC implementation:** adapted from
+  [intersecato/solidtime](https://github.com/intersecato/solidtime), which built the original
+  generic OIDC support. This repository extracts **only** that work and rebases it onto the
+  current upstream release.
 
-We also have an examples repository [here](https://github.com/solidtime-io/self-hosting-examples)
+Licensed **AGPL-3.0**, same as upstream.
 
-If you do not want to self-host solidtime or try it out you can sign up for [solidtime cloud](https://www.solidtime.io/)
+## What is included
 
-## Issues & Feature Requests
+Five new files plus small edits to eight existing ones:
 
-If you find any **bugs in solidtime**, please feel free to [**open an issue**](https://github.com/solidtime-io/solidtime/issues/new) in this repository, with instructions on how to reproduce the bug. 
-If you have a **feature request**, please [**create a discussion**](https://github.com/solidtime-io/solidtime/discussions/new?category=feature-requests) in this repository.
+| New | Purpose |
+|---|---|
+| `app/Service/Auth/OidcService.php` | The OIDC flow: authorization URL, callback, user resolution |
+| `app/Http/Controllers/Auth/OidcController.php` | Two routes: redirect and callback |
+| `app/Http/Middleware/PreventOidcProfilePhotoChanges.php` | Blocks local edits to OIDC-managed profile photos |
+| `app/Extensions/Fortify/CustomLogoutResponse.php` | Federated (end-session) logout |
+| `database/migrations/..._add_oidc_sub_to_users_table.php` | `oidc_sub`, nullable, UNIQUE |
+| `tests/Feature/OidcAuthenticationTest.php` | Feature tests |
 
-## Contributing
+Edited: `Kernel.php`, `User.php`, `FortifyServiceProvider.php`, `routes/web.php`,
+`config/auth.php`, `config/services.php`, `composer.json`, plus `Login.vue` and
+`AuthenticationCard.vue`.
 
-Please open an issue or start a discussion and wait for approval before submitting a pull request. This does not apply to tiny fixes or changes however, please keep in mind that we might not merge PRs for various reasons. 
+Dependency added: [`facile-it/php-openid-client`](https://github.com/facile-it/php-openid-client).
 
-**If you submit an AI slop pull request (especially without following the proper procedure), you will be banned from future contributions to solidtime.**
+## Security properties
 
-To keep that manageable, pull requests from authors who are not vouched are closed automatically, unless they change 50 lines or fewer. To get vouched, open an issue or discussion first and explain how you intend to implement the change. Once we have agreed on the approach, we vouch for you. See [Vouched contributors](./CONTRIBUTING.md#vouched-contributors).
+The flow implements `state` (compared with `hash_equals`), `nonce`, and **PKCE S256**. The `sub`
+claim from the ID token is cross-checked against the userinfo response. Users are matched by
+`oidc_sub` first and only then by e-mail, and an account already bound to a different `sub` is
+refused rather than re-linked.
 
-Please read the [CONTRIBUTING.md](./CONTRIBUTING.md) before sumbitting a Pull Request.
+**Recommended hardening** (see configuration below):
 
-We do accept contributions in the [documentation repository](https://github.com/solidtime-io/docs) f.e. to add new self-hosting guides.
+- `OIDC_SYNC_PROFILE_PHOTO=false` — the profile-photo sync fetches the URL from the `picture`
+  claim server-side, following redirects, with no scheme or address allowlist. On a container
+  platform that is a blind SSRF vector. Disabling it removes the code path entirely.
+- `OIDC_REQUIRE_VERIFIED_EMAIL=true` — without it, e-mail auto-linking can take over an existing
+  account if your IdP does not guarantee verified addresses.
+- `OIDC_AUTO_REGISTER=false` — otherwise anyone who can authenticate at your IdP gets an account,
+  which silently overrides `APP_ENABLE_REGISTRATION`.
 
-## Security
+## Differences from the source fork
 
-Looking to report a vulnerability? Please refer our [SECURITY.md](./SECURITY.md) file.
+Only the OIDC work was taken. MySQL support, billing toggles, invoicing, daily activities,
+custom login branding and the clients toggle were **deliberately left out**.
 
-## License
+Four corrections were made while rebasing onto `v0.20.0`:
 
-This project is open-source and available under the GNU Affero General Public License v3.0 (AGPL v3). Please see the [license file](LICENSE.md) for more information.
+1. **Invitation matching.** The original queried `lower(name)` on `organization_invitations`.
+   That column does not exist upstream and `email` is `NOT NULL`, so it would fail at runtime.
+   Invitations are now matched by e-mail only.
+2. **`canRegister`.** The original used `(bool) config('app.enable_registration')`. Upstream
+   stores that as a string (`on` / `off` / `invite-only`), and `(bool) 'off'` is `true` in PHP —
+   the register link would appear with registration disabled. Now uses upstream's
+   `RegistrationMode` enum.
+3. **`loginView` location.** The original registers it in `JetstreamServiceProvider`; upstream
+   `v0.20.0` registers it in `FortifyServiceProvider`. Adding a second registration would
+   silently shadow the first. The existing one is modified instead.
+4. **Dead config removed.** Login-logo settings were dropped along with the custom logo
+   component, which is branding rather than OIDC.
+
+## Configuration
+
+```dotenv
+OIDC_ENABLED=true
+OIDC_ISSUER=https://idp.example.com/realms/your-realm
+OIDC_CLIENT_ID=solidtime
+OIDC_CLIENT_SECRET=...
+OIDC_REDIRECT_URI=https://timetracker.example.com/auth/oidc/callback
+OIDC_SCOPES="openid profile email"
+
+OIDC_REQUIRE_VERIFIED_EMAIL=true
+OIDC_SYNC_PROFILE_PHOTO=false
+OIDC_AUTO_REGISTER=false
+OIDC_AUTO_LINK=true
+OIDC_LOGOUT_ENABLED=true
+
+# Set to false only after verifying SSO works - it locks out password login.
+AUTH_PASSWORD_LOGIN_ENABLED=true
+```
+
+Register `<APP_URL>/auth/oidc/callback` as the redirect URI at your provider.
+
+## Building
+
+Same recipe as upstream's `build-public.yml`:
+
+```bash
+cp .env.production .env
+composer install --no-dev --prefer-dist --ignore-platform-reqs --classmap-authoritative
+npm ci && npm run build
+docker build -f docker/prod/Dockerfile --build-arg DOCKER_FILES_BASE_PATH=docker/prod/ .
+```
+
+The production `Dockerfile` expects an already-built tree — `composer install` and `npm run build`
+are commented out inside it.
+
+> **Note on flaky builds:** upstream installs 20 PHP extensions in a single `RUN`. When
+> `pecl.php.net` throttles, a random extension fails and the whole layer is rebuilt. Splitting
+> that `RUN` into groups lets Docker cache the ones that succeeded. Not included here, since it
+> is unrelated to OIDC.
+
+## Rebasing onto a new upstream release
+
+```bash
+git remote add upstream https://github.com/solidtime-io/solidtime.git
+git fetch upstream --tags
+git rebase v0.X.Y
+```
+
+Re-check `FortifyServiceProvider` (where `loginView` lives), the `organization_invitations`
+schema, and `RegistrationMode`.
+
+**This patch has an expiry date.** When upstream merges #1131 and ships OIDC, drop it and move
+the configuration over.
