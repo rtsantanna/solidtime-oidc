@@ -1,7 +1,7 @@
 # solidtime-oidc
 
 Generic **OIDC single sign-on** for [solidtime](https://github.com/solidtime-io/solidtime),
-applied as a **minimal, rebasable patch** on top of the upstream `v0.20.0` release.
+applied as a **minimal, rebasable patch** on top of the upstream `v0.21.0` release.
 
 Works with any OpenID Connect provider. Validated against **Keycloak federating Microsoft
 Entra ID**. Not Google-only, and not a full fork of an old base.
@@ -70,7 +70,7 @@ refused rather than re-linked.
 Only the OIDC work was taken. MySQL support, billing toggles, invoicing, daily activities,
 custom login branding and the clients toggle were **deliberately left out**.
 
-Four corrections were made while rebasing onto `v0.20.0`:
+Four corrections were made while rebasing onto `v0.21.0`:
 
 1. **Invitation matching.** The original queried `lower(name)` on `organization_invitations`.
    That column does not exist upstream and `email` is `NOT NULL`, so it would fail at runtime.
@@ -80,7 +80,7 @@ Four corrections were made while rebasing onto `v0.20.0`:
    the register link would appear with registration disabled. Now uses upstream's
    `RegistrationMode` enum.
 3. **`loginView` location.** The original registers it in `JetstreamServiceProvider`; upstream
-   `v0.20.0` registers it in `FortifyServiceProvider`. Adding a second registration would
+   `v0.21.0` registers it in `FortifyServiceProvider`. Adding a second registration would
    silently shadow the first. The existing one is modified instead.
 4. **Dead config removed.** Login-logo settings were dropped along with the custom logo
    component, which is branding rather than OIDC.
@@ -109,17 +109,19 @@ Register `<APP_URL>/auth/oidc/callback` as the redirect URI at your provider.
 
 ## Building
 
-Same recipe as upstream's `build-public.yml`:
+This candidate targets PHP 8.4.26 and FrankenPHP 1.12.7. Prepare production dependencies and assets before building, as in upstream's `build-public.yml`:
 
 ```bash
 cp .env.production .env
-composer install --no-dev --prefer-dist --ignore-platform-reqs --classmap-authoritative
+composer install --no-dev --prefer-dist --classmap-authoritative
 npm ci && npm run build
 docker build -f docker/prod/Dockerfile --build-arg DOCKER_FILES_BASE_PATH=docker/prod/ .
 ```
 
 The production `Dockerfile` expects an already-built tree — `composer install` and `npm run build`
-are commented out inside it.
+are commented out inside it. Use Node.js 24 for the frontend build. The OIDC client requires
+`brick/math` 0.12.3; all other packages already present in the upstream v0.21.0 lock keep their
+upstream versions. This dependency exception needs validation whenever the patch is rebased.
 
 > **Note on flaky builds:** upstream installs 20 PHP extensions in a single `RUN`. When
 > `pecl.php.net` throttles, a random extension fails and the whole layer is rebuilt. Splitting

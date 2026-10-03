@@ -70,6 +70,7 @@ class MemberServiceTest extends TestCaseWithDatabase
         // Arrange
         $user = User::factory()->create([
             'password' => Hash::make('secret-password'),
+            'oidc_sub' => 'local-placeholder-original-subject',
             'remember_token' => 'remember-me-token',
             'two_factor_secret' => 'two-factor-secret',
             'two_factor_recovery_codes' => 'two-factor-recovery-codes',
@@ -90,6 +91,7 @@ class MemberServiceTest extends TestCaseWithDatabase
         $this->assertTrue($placeholderUser->is_placeholder);
         $this->assertSame($user->email, $placeholderUser->email);
         $this->assertNull($placeholderUser->password);
+        $this->assertNull($placeholderUser->oidc_sub);
         $this->assertNull($placeholderUser->remember_token);
         $this->assertNull($placeholderUser->two_factor_secret);
         $this->assertNull($placeholderUser->two_factor_recovery_codes);
@@ -105,6 +107,7 @@ class MemberServiceTest extends TestCaseWithDatabase
         $this->assertNotNull($user->email_verified_at);
         $this->assertSame('pending@example.com', $user->pending_email);
         $this->assertSame('profile-photos/photo.png', $user->profile_photo_path);
+        $this->assertSame('local-placeholder-original-subject', $user->oidc_sub);
     }
 
     public function test_make_member_to_placeholder_creates_new_user_based_on_member_and_changes_member_to_placeholder(): void

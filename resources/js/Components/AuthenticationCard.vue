@@ -18,9 +18,7 @@ onMounted(async () => {
             <slot name="logo" />
         </div>
 
-        <div
-            v-if="unframed"
-            class="w-full sm:max-w-md mt-6 px-6 overflow-hidden">
+        <div v-if="unframed" class="w-full sm:max-w-md mt-6 px-6 overflow-hidden">
             <slot />
         </div>
 

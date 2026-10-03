@@ -17,9 +17,9 @@ use Facile\OpenIDClient\Client\ClientInterface;
 use Facile\OpenIDClient\Client\Metadata\ClientMetadata;
 use Facile\OpenIDClient\Issuer\IssuerBuilder;
 use Facile\OpenIDClient\Issuer\Metadata\Provider\MetadataProviderBuilder;
+use Facile\OpenIDClient\Service\AuthorizationService;
 use Facile\OpenIDClient\Service\Builder\AuthorizationServiceBuilder;
 use Facile\OpenIDClient\Service\Builder\UserInfoServiceBuilder;
-use Facile\OpenIDClient\Service\AuthorizationService;
 use Facile\OpenIDClient\Service\UserInfoService;
 use Facile\OpenIDClient\Session\AuthSession;
 use Facile\OpenIDClient\Session\AuthSessionInterface;
@@ -226,8 +226,13 @@ class OidcService
         $clientSecret = config('services.oidc.client_secret');
         $authMethod = config('services.oidc.token_endpoint_auth_method')
             ?: (filled($clientSecret) ? 'client_secret_basic' : 'none');
+        $clientId = (string) config('services.oidc.client_id');
+        if ($clientId === '') {
+            throw new RuntimeException('Missing OIDC client ID.');
+        }
+
         $clientMetadata = [
-            'client_id' => (string) config('services.oidc.client_id'),
+            'client_id' => $clientId,
             'redirect_uris' => [$this->redirectUri()],
             'response_types' => ['code'],
             'token_endpoint_auth_method' => $authMethod,
@@ -247,18 +252,20 @@ class OidcService
     {
         $httpFactory = $this->httpFactory();
 
-        return (new AuthorizationServiceBuilder)
-            ->setHttpClient($this->httpClient())
-            ->setRequestFactory($httpFactory)
-            ->build();
+        $builder = new AuthorizationServiceBuilder;
+        $builder->setHttpClient($this->httpClient());
+        $builder->setRequestFactory($httpFactory);
+
+        return $builder->build();
     }
 
     private function userInfoService(): UserInfoService
     {
-        return (new UserInfoServiceBuilder)
-            ->setHttpClient($this->httpClient())
-            ->setRequestFactory($this->httpFactory())
-            ->build();
+        $builder = new UserInfoServiceBuilder;
+        $builder->setHttpClient($this->httpClient());
+        $builder->setRequestFactory($this->httpFactory());
+
+        return $builder->build();
     }
 
     private function httpClient(): PsrHttpClient
@@ -279,6 +286,8 @@ class OidcService
      */
     private function claims(ClientInterface $client, TokenSetInterface $tokenSet): array
     {
+        // The vendor's Psalm array intersection is not understood by PHPStan.
+        /** @var array<string, mixed> $claims */
         $claims = $tokenSet->claims();
 
         if (
@@ -286,18 +295,16 @@ class OidcService
             && $client->getIssuer()->getMetadata()->getUserinfoEndpoint() !== null
         ) {
             $userInfo = $this->userInfoService()->getUserInfo($client, $tokenSet);
-            if (is_array($userInfo)) {
-                if (
-                    isset($claims['sub'], $userInfo['sub'])
-                    && is_string($claims['sub'])
-                    && is_string($userInfo['sub'])
-                    && ! hash_equals($claims['sub'], $userInfo['sub'])
-                ) {
-                    throw new RuntimeException('OIDC ID token and userinfo subjects do not match.');
-                }
-
-                $claims = array_merge($claims, $userInfo);
+            if (
+                isset($claims['sub'], $userInfo['sub'])
+                && is_string($claims['sub'])
+                && is_string($userInfo['sub'])
+                && ! hash_equals($claims['sub'], $userInfo['sub'])
+            ) {
+                throw new RuntimeException('OIDC ID token and userinfo subjects do not match.');
             }
+
+            $claims = array_merge($claims, $userInfo);
         }
 
         if (! isset($claims['sub']) || ! is_string($claims['sub']) || $claims['sub'] === '') {
@@ -436,10 +443,6 @@ class OidcService
             ->get();
 
         foreach ($invitations as $invitation) {
-            if ($invitation->organization === null) {
-                continue;
-            }
-
             $alreadyMember = Member::query()
                 ->whereBelongsTo($invitation->organization, 'organization')
                 ->whereBelongsTo($user, 'user')
@@ -454,6 +457,9 @@ class OidcService
         }
     }
 
+    /**
+     * @param  Builder<OrganizationInvitation>  $query
+     */
     private function addMatchingInvitationConstraints(Builder $query, string $email, string $normalizedName): void
     {
         // Upstream v0.20.0: organization_invitations tem email NOT NULL e nao possui
@@ -565,7 +571,7 @@ class OidcService
             return null;
         }
 
-        $contentType = strtolower(trim(explode(';', $response->getHeaderLine('Content-Type'))[0] ?? ''));
+        $contentType = strtolower(trim(explode(';', $response->getHeaderLine('Content-Type'))[0]));
         $extension = match ($contentType) {
             'image/jpeg', 'image/jpg' => 'jpg',
             'image/png' => 'png',
@@ -586,13 +592,20 @@ class OidcService
         return [$contents, $extension];
     }
 
+    /**
+     * @return non-empty-string
+     */
     private function redirectUri(): string
     {
-        if (filled(config('services.oidc.redirect_uri'))) {
-            return (string) config('services.oidc.redirect_uri');
+        $redirectUri = filled(config('services.oidc.redirect_uri'))
+            ? (string) config('services.oidc.redirect_uri')
+            : route('oidc.callback');
+
+        if ($redirectUri === '') {
+            throw new RuntimeException('Missing OIDC redirect URI.');
         }
 
-        return route('oidc.callback');
+        return $redirectUri;
     }
 
     /**

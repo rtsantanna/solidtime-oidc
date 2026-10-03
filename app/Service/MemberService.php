@@ -220,6 +220,7 @@ class MemberService
         $placeholderUser->is_placeholder = true;
         // Reset authentication relevant properties on the placeholder user
         $placeholderUser->password = null;
+        $placeholderUser->oidc_sub = null;
         $placeholderUser->remember_token = null;
         $placeholderUser->two_factor_secret = null;
         $placeholderUser->two_factor_recovery_codes = null;

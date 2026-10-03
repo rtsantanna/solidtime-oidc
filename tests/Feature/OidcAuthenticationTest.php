@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Providers\RouteServiceProvider;
 use App\Service\Auth\OidcService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
+use Laravel\Passport\Passport;
 use Mockery\MockInterface;
 use Tests\TestCase;
 
@@ -70,5 +72,38 @@ class OidcAuthenticationTest extends TestCase
             );
 
         $this->assertGuest();
+    }
+
+    public function test_oidc_profile_photo_cannot_be_changed_through_the_api(): void
+    {
+        $disk = (string) config('filesystems.public');
+        Storage::fake($disk);
+        $path = 'profile-photos/local-oidc.png';
+        Storage::disk($disk)->put($path, 'original local photo');
+        $user = User::factory()->create([
+            'oidc_sub' => 'local-photo-protected-subject',
+            'profile_photo_path' => $path,
+        ]);
+        Passport::actingAs($user);
+        $photo = file_get_contents(resource_path('testfiles/test.png'));
+        $this->assertIsString($photo);
+
+        foreach ([base64_encode($photo), null] as $value) {
+            $this->putJson('/api/v1/users/'.$user->id, ['photo' => $value])->assertForbidden();
+            $this->assertSame($path, $user->refresh()->profile_photo_path);
+            Storage::disk($disk)->assertExists($path);
+        }
+    }
+
+    public function test_oidc_user_can_update_profile_settings_without_a_photo(): void
+    {
+        $user = User::factory()->create(['oidc_sub' => 'local-settings-subject']);
+        Passport::actingAs($user);
+
+        $this->putJson('/api/v1/users/'.$user->id, ['timezone' => 'Europe/Lisbon'])
+            ->assertSuccessful();
+
+        $this->assertSame('Europe/Lisbon', $user->refresh()->timezone);
+        $this->assertSame('local-settings-subject', $user->oidc_sub);
     }
 }

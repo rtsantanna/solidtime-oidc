@@ -123,6 +123,7 @@ class User extends Authenticatable implements AuditableContract, FilamentUser, M
      * @var array<string, mixed>
      */
     protected $attributes = [
+        'oidc_sub' => null,
         'week_start' => Weekday::Monday,
         'send_time_entry_still_running_email' => true,
     ];

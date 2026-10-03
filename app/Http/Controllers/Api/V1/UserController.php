@@ -83,6 +83,10 @@ class UserController extends Controller
         }
 
         if ($request->hasPhotoKey()) {
+            if ($user->oidc_sub !== null) {
+                throw new AuthorizationException('Profile photos are managed by your SSO provider.');
+            }
+
             $photoDisk = (string) config('filesystems.public');
             $previousPhotoPath = $user->profile_photo_path;
             $newPhoto = $request->getPhoto();
